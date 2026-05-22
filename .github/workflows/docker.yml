@@ -1,0 +1,39 @@
+name: Docker
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - '4.*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read # to fetch the repository content
+      id-token: write # for signing attestation(s) with GitHub OIDC Token
+      packages: write # for pushing the container image
+    with:
+      output: image
+      push: ${{ github.event_name != 'pull_request' }}
+      platforms: linux/amd64
+      build-args: |
+        DOCKER_METADATA_OUTPUT_VERSION
+        branch=stable
+      meta-images: |
+        ghcr.io/tkcert/assemblyline-service-misp-event
+      meta-tags: |
+        type=pep440,pattern={{version}}
+        type=ref,event=branch
+        type=ref,event=pr
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}

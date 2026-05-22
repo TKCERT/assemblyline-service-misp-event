@@ -1,0 +1,68 @@
+name: MISPEvent
+version: $SERVICE_TAG
+description: This Assemblyline service will create a MISP event based on all results.
+
+# Regex defining the types of files the service accepts and rejects
+accepts: .*
+rejects: empty|metadata/.*
+
+# At which stage the service should run (one of FILTER, EXTRACT, CORE, SECONDARY, POST, REVIEW)
+# NOTE: Stages are executed in the order defined in the list
+stage: REVIEW
+# Which category the service is part of (one of Antivirus, Dynamic Analysis, External, Extraction, Filtering, Internet Connected, Networking, Static Analysis)
+category: External
+
+# Does the service require access to the file to perform its task
+# If set to false, the service will only have access to the file metadata (e.g. Hashes, size, type, ...)
+file_required: false
+# Maximum execution time the service has before it's considered to be timed out
+timeout: 600
+
+# is the service enabled by default
+enabled: true
+
+# Special settings due to post-processing
+disable_cache: true
+uses_tags: true
+uses_tag_scores: true
+uses_metadata: true
+uses_temp_submission_data: true
+
+# Service configuration block (dictionary of config variables)
+#     NOTE: The key names can be anything and the value can be of any types
+config:
+  misp_service_url: ""
+  misp_service_api_key: ""
+  verify_certificate: true
+
+# Submission params block:
+#     A list of submission param object that define parameters
+#     that the user can change about the service for each of its scans
+#     SUPPORTED TYPES: bool, int, str, list
+# submission_params:
+#   - default: ""
+#     name: password
+#     type: str
+#     value: ""
+#   - default: false
+#     name: extra_work
+#     type: bool
+#     value: false
+
+# Service heuristic blocks: List of heuristic objects that define the different heuristics used in the service
+# heuristics:
+#   - description: This is a demo heuristic
+#     filetype: "*"
+#     heur_id: 1
+#     name: Demo
+#     score: 100
+
+# Docker configuration block which defines:
+#  - the name of the docker container that will be created
+#  - CPU and ram allocation by the container
+docker_config:
+  allow_internet_access: true
+  image: ${REGISTRY}ghcr.io/tkcert/assemblyline-service-misp-event:$SERVICE_TAG
+  cpu_cores: 1.0
+  ram_mb_min: 512
+  ram_mb: 1024
