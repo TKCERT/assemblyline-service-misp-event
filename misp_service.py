@@ -43,6 +43,20 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
         },
     },
     {
+        "al_tag_patterns": ["network.email.address"],
+        "misp_object_name": "person",
+        "misp_attributes": {
+            "e-mail": {"type": "email-src", "ids": True, "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["network.email.subject"],
+        "misp_object_name": "email",
+        "misp_attributes": {
+            "subject": {"type": "email-subject", "correlate": True, "tag": True},
+        },
+    },
+    {
         "al_tag_patterns": ["dynamic.registry_key"],
         "misp_object_name": "registry-key",
         "misp_attributes": {
