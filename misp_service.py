@@ -106,6 +106,7 @@ class MalwareAnalysisResult(IntEnum):
 
 
 IFX_VETTING_TAG_PREFIX = "ifx-vetting:vetted"
+WORKFLOW_REVIEW_TAG = 'workflow:todo="review-before-publication"'
 
 class MISPService(ServiceBase):
     MISP_SERVICE_URL_CONFIG_KEY: str = "misp_service_url"
@@ -312,8 +313,40 @@ class MISPService(ServiceBase):
 
         self._add_object_attribute_if_missing(obj, object_relation, value, attr_type)
 
-    def _attribute_has_tag(self, attribute: Any, tag_name: str) -> bool:
-        return any(str(tag.name).strip().lower() == tag_name.lower() for tag in getattr(attribute, "tags", []) or [])
+    def _ifx_vetting_rank(self, tag_value: str) -> int:
+        normalized = tag_value.strip().lower()
+        if normalized == "malicious":
+            return 2
+        if normalized in {"malicious-uncertain", "suspicious"}:
+            return 1
+        return 0
+
+    def _highest_ifx_vetting_tag_name(self, event: MISPEvent) -> Optional[str]:
+        highest_value: Optional[str] = None
+        highest_rank = 0
+        prefix = f'{IFX_VETTING_TAG_PREFIX}="'
+
+        for obj in event.objects:
+            for attribute in getattr(obj, "attributes", []) or []:
+                for tag in getattr(attribute, "tags", []) or []:
+                    raw_name = str(getattr(tag, "name", "")).strip()
+                    if not raw_name.lower().startswith(prefix.lower()) or not raw_name.endswith('"'):
+                        continue
+                    tag_value = raw_name[len(prefix):-1]
+                    rank = self._ifx_vetting_rank(tag_value)
+                    if rank > highest_rank:
+                        highest_rank = rank
+                        highest_value = tag_value
+
+        if highest_rank == 0 or not highest_value:
+            return None
+        return f'{IFX_VETTING_TAG_PREFIX}="{highest_value}"'
+
+    def _apply_event_tags_from_ifx_vetting(self, event: MISPEvent) -> None:
+        highest_ifx_tag = self._highest_ifx_vetting_tag_name(event)
+        if highest_ifx_tag:
+            event.add_tag(highest_ifx_tag)
+            event.add_tag(WORKFLOW_REVIEW_TAG)
 
     def _ifx_vetting_tag_value(self, score: Optional[int]) -> Optional[str]:
         result = self._malware_analysis_result_for_score(score)
@@ -339,8 +372,6 @@ class MISPService(ServiceBase):
         if tag_value is None:
             return
         tag_name = f'{IFX_VETTING_TAG_PREFIX}="{tag_value}"'
-        if self._attribute_has_tag(attribute, tag_name):
-            return
         attribute.add_tag(tag_name)
 
     def _add_object_attribute_if_missing(
@@ -934,6 +965,8 @@ class MISPService(ServiceBase):
                 source_file_obj,
                 stats,
             )
+
+        self._apply_event_tags_from_ifx_vetting(event)
 
         stats["new_file_objects"] = self._count_file_objects(event) - existing_file_count
         return stats
