@@ -478,12 +478,7 @@ class MISPService(ServiceBase):
     def _count_file_objects(self, event: MISPEvent) -> int:
         return sum(1 for obj in event.objects if obj.name == "file")
 
-    def _add_reference_if_missing(
-        self,
-        source_obj: MISPObject,
-        target_obj: MISPObject,
-        relationship_type: str,
-    ) -> None:
+    def _add_reference_if_missing(self, source_obj: MISPObject, target_obj: MISPObject, relationship_type: str) -> None:
         for reference in source_obj.references:
             if (
                 reference.referenced_uuid == target_obj.uuid
@@ -802,6 +797,7 @@ class MISPService(ServiceBase):
         source_file_obj: Optional[MISPObject],
         analysis_result: MalwareAnalysisResult,
     ) -> bool:
+        analysis_result_label = self._malware_analysis_result_label(analysis_result)
         marker = self._submission_configuration_version_marker(sid)
 
         for obj in event.objects:
@@ -818,41 +814,16 @@ class MISPService(ServiceBase):
             analysis_result = self._highest_malware_analysis_result(existing_result, analysis_result)
             analysis_result_label = self._malware_analysis_result_label(analysis_result)
 
-            self._add_object_attribute_if_missing(
-                obj,
-                "product",
-                self.MALWARE_ANALYSIS_PRODUCT,
-                "text",
-            )
-            self._set_object_attribute_value(
-                obj,
-                "result",
-                analysis_result_label,
-                "text",
-            )
+            self._add_object_attribute_if_missing(obj, "product", self.MALWARE_ANALYSIS_PRODUCT, "text", True)
+            self._set_object_attribute_value(obj, "result", analysis_result_label, "text")
             if source_file_obj is not None and obj.uuid != source_file_obj.uuid:
                 self._add_reference_if_missing(source_file_obj, obj, "analysed-with")
             return False
 
         obj = MISPObject(name="malware-analysis")
-        self._add_object_attribute_if_missing(
-            obj,
-            "product",
-            self.MALWARE_ANALYSIS_PRODUCT,
-            "text",
-        )
-        self._add_object_attribute_if_missing(
-            obj,
-            "configuration_version",
-            marker,
-            "text",
-        )
-        self._add_object_attribute_if_missing(
-            obj,
-            "result",
-            self._malware_analysis_result_label(analysis_result),
-            "text",
-        )
+        self._add_object_attribute_if_missing(obj, "product", self.MALWARE_ANALYSIS_PRODUCT, "text", True)
+        self._add_object_attribute_if_missing(obj, "configuration_version", marker, "text", False)
+        self._add_object_attribute_if_missing(obj, "result", analysis_result_label, "text", False)
         event.add_object(obj)
         if source_file_obj is not None and obj.uuid != source_file_obj.uuid:
             self._add_reference_if_missing(source_file_obj, obj, "analysed-with")
@@ -915,8 +886,7 @@ class MISPService(ServiceBase):
         source_file_obj: Optional[MISPObject] = None
         if request.sha256:
             source_file_obj = object_value_index.setdefault(
-                self._object_attribute_index_key("file", "sha256"),
-                {},
+                self._object_attribute_index_key("file", "sha256"), {},
             ).get(self._value_norm_key(request.sha256))
 
         if self._ensure_submission_analysis_object(event, request.sid, source_file_obj, analysis_result):
@@ -943,16 +913,9 @@ class MISPService(ServiceBase):
                         "mime-type": {"type": "mime-type", "value": node_type},
                     },
                 }
-                self._upsert_object_from_mapping(
-                    event,
-                    ancestry_node_mapping,
-                    node_sha256,
-                    object_value_index,
-                    None,
-                )
+                self._upsert_object_from_mapping(event, ancestry_node_mapping, node_sha256, object_value_index, None)
                 file_obj = object_value_index.setdefault(
-                    self._object_attribute_index_key("file", "sha256"),
-                    {},
+                    self._object_attribute_index_key("file", "sha256"), {},
                 ).get(self._value_norm_key(node_sha256)) if node_sha256 else None
                 if file_obj is None:
                     continue
@@ -960,25 +923,14 @@ class MISPService(ServiceBase):
                 if previous_obj is not None and previous_obj.uuid != file_obj.uuid:
                     before_refs = len(file_obj.references)
                     relationship_type = self._relationship_type_for_parent_relation(node_parent_relation)
-                    self._add_reference_if_missing(
-                        file_obj,
-                        previous_obj,
-                        relationship_type,
-                    )
+                    self._add_reference_if_missing(file_obj, previous_obj, relationship_type)
                     if len(file_obj.references) > before_refs:
                         stats["new_ancestry_links"] += 1
 
                 previous_obj = file_obj
 
         for mapping in TAG_PROCESSING_MAPPINGS:
-            self._process_tag_mapping(
-                event,
-                mapping,
-                tags,
-                object_value_index,
-                source_file_obj,
-                stats,
-            )
+            self._process_tag_mapping(event, mapping, tags, object_value_index, source_file_obj, stats)
 
         self._apply_event_tags_from_ifx_vetting(event)
 
