@@ -64,7 +64,7 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
         },
     },
     {
-        "al_tag_patterns": ["static.signature.name", "static.signature.category", "av.virus_name"],
+        "al_tag_patterns": ["static.signature.name", "static.signature.category", "file.rule.yara", "av.virus_name"],
         "misp_object_name": "av-signature",
         "misp_attributes": {
             "signature": {"type": "text", "correlate": True},
@@ -72,7 +72,7 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
         },
     },
     {
-        "al_tag_patterns": ["dynamic.signature.name", "dynamic.signature.category"],
+        "al_tag_patterns": ["dynamic.signature.name", "dynamic.signature.category", "file.behavior"],
         "misp_object_name": "sb-signature",
         "misp_attributes": {
             "signature": {"type": "text", "correlate": True},
