@@ -176,8 +176,6 @@ class MISPService(ServiceBase):
         )
 
     def _normalize_events(self, raw_events: Any) -> Iterable[MISPEvent]:
-        normalized_events = []
-
         if isinstance(raw_events, MISPEvent):
             return [raw_events]
 
@@ -190,6 +188,7 @@ class MISPService(ServiceBase):
         else:
             iterable = []
 
+        normalized_events = []
         for item in iterable:
             if isinstance(item, MISPEvent):
                 normalized_events.append(item)
@@ -781,10 +780,6 @@ class MISPService(ServiceBase):
 
         return max_score
 
-    def _primary_analysis_result(self, request: ServiceRequest) -> MalwareAnalysisResult:
-        score = self._max_tag_score(request.task.tags or {})
-        return self._malware_analysis_result_for_score(score)
-
     def _source_file_relation_policy(self, analysis_result: MalwareAnalysisResult) -> Dict[str, bool]:
         if analysis_result in (MalwareAnalysisResult.SUSPICIOUS, MalwareAnalysisResult.MALICIOUS):
             return {"ids": True, "tag": True}
@@ -862,8 +857,8 @@ class MISPService(ServiceBase):
         object_value_index = self._index_existing_object_values(event)
         existing_file_count = self._count_file_objects(event)
 
-        analysis_result = self._primary_analysis_result(request)
         source_file_score = self._max_tag_score(tags)
+        analysis_result = self._malware_analysis_result_for_score(source_file_score)
 
         source_file_mapping: Dict[str, Any] = {
             "misp_object_name": "file",
@@ -939,7 +934,6 @@ class MISPService(ServiceBase):
 
     def _ensure_submission_event(self, sid: str) -> Tuple[MISPEvent, str]:
         existing_event = self._find_existing_event(sid)
-
         if existing_event:
             event = self.pymisp.get_event(existing_event, pythonify=True)
             if not isinstance(event, MISPEvent):
