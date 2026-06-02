@@ -571,11 +571,7 @@ class MISPService(ServiceBase):
 
         primary_relation_options = misp_attributes.get(object_relation, {})
 
-        default_source_file_relationship: Optional[str]
-        if object_name == "file":
-            default_source_file_relationship = None
-        else:
-            default_source_file_relationship = self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
+        default_source_file_relationship = None if object_name == "file" else self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
         source_file_relationship = mapping.get("misp_source_file_relationship", default_source_file_relationship)
 
         existing_object = object_value_index.setdefault(index_key, {}).get(normalized)
@@ -805,11 +801,11 @@ class MISPService(ServiceBase):
             None,
             source_file_score,
         )
+        file_sha_bucket = object_value_index.setdefault(self._object_attribute_index_key("file", "sha256"), {})
+
         source_file_obj: Optional[MISPObject] = None
         if request.sha256:
-            source_file_obj = object_value_index.setdefault(
-                self._object_attribute_index_key("file", "sha256"), {},
-            ).get(self._value_norm_key(request.sha256))
+            source_file_obj = file_sha_bucket.get(self._value_norm_key(request.sha256))
 
         if self._ensure_submission_analysis_object(event, request.sid, source_file_obj, analysis_result):
             stats["new_malware_analysis_objects"] += 1
@@ -836,9 +832,7 @@ class MISPService(ServiceBase):
                     },
                 }
                 self._upsert_object_from_mapping(event, ancestry_node_mapping, node_sha256, object_value_index, None)
-                file_obj = object_value_index.setdefault(
-                    self._object_attribute_index_key("file", "sha256"), {},
-                ).get(self._value_norm_key(node_sha256)) if node_sha256 else None
+                file_obj = file_sha_bucket.get(self._value_norm_key(node_sha256)) if node_sha256 else None
                 if file_obj is None:
                     continue
 
