@@ -493,20 +493,6 @@ class MISPService(ServiceBase):
 
         source_obj.add_reference(target_obj, relationship_type=relationship_type)
 
-    def _extract_tag_values(self, tags: Dict[str, Any], key: str) -> Iterable[str]:
-        for value_with_score in tags.get(key, []) or []:
-            if isinstance(value_with_score, (list, tuple)) and value_with_score:
-                tag_value = value_with_score[0]
-            else:
-                tag_value = value_with_score
-
-            if tag_value is None:
-                continue
-
-            tag_value = str(tag_value).strip()
-            if tag_value:
-                yield tag_value
-
     def _extract_tag_values_with_scores(self, tags: Dict[str, Any], key: str) -> Iterable[Tuple[str, Optional[int]]]:
         for value_with_score in tags.get(key, []) or []:
             if isinstance(value_with_score, (list, tuple)) and value_with_score:
@@ -725,11 +711,6 @@ class MISPService(ServiceBase):
                     max_score = score
 
         return max_score
-
-    def _source_file_relation_policy(self, analysis_result: MalwareAnalysisResult) -> Dict[str, bool]:
-        if analysis_result in (MalwareAnalysisResult.SUSPICIOUS, MalwareAnalysisResult.MALICIOUS):
-            return {"ids": True, "tag": True}
-        return {"ids": False, "tag": False}
 
     def _ensure_submission_analysis_object(
         self,
