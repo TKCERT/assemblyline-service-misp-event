@@ -1,5 +1,6 @@
 import json
 from enum import IntEnum
+from urllib.parse import urlsplit
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from assemblyline_v4_service.common.base import ServiceBase
@@ -26,6 +27,11 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
         "misp_object_name": "url",
         "misp_attributes": {
             "url": {"type": "url", "ids": True, "correlate": True, "tag": True},
+            "scheme": {"value": lambda x: urlsplit(x).scheme, "type": "text"},
+            "host": {"value": lambda x: urlsplit(x).netloc, "type": "text"},
+            "resource_path": {"value": lambda x: urlsplit(x).path, "type": "text"},
+            "query_string": {"value": lambda x: urlsplit(x).query, "type": "text"},
+            "fragment": {"value": lambda x: urlsplit(x).fragment, "type": "text"},
         },
     },
     {
@@ -643,6 +649,8 @@ class MISPService(ServiceBase):
                     continue
                 attr_type = self._required_mapping_attribute_type(object_name, relation, options)
                 raw_value = options.get("value")
+                if callable(raw_value):
+                    raw_value = raw_value(value)
                 existing_attribute = self._add_object_attribute_if_missing(
                     existing_object,
                     relation,
@@ -681,6 +689,8 @@ class MISPService(ServiceBase):
                 continue
             attr_type = self._required_mapping_attribute_type(object_name, relation, options)
             raw_value = options.get("value")
+            if callable(raw_value):
+                raw_value = raw_value(value)
             created_attributes[relation] = self._add_object_attribute_if_missing(
                 obj,
                 relation,
