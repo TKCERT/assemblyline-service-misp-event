@@ -603,22 +603,22 @@ class MISPService(ServiceBase):
             object_relation,
             value,
             self._required_mapping_attribute_type(object_name, object_relation, primary_relation_options),
-            disable_correlation=not bool(misp_attributes.get(object_relation, {}).get("correlate", False)),
+            disable_correlation=not bool(primary_relation_options.get("correlate", False)),
         )
         relation_updates.append((object_relation, value, primary_attribute))
 
-        for relation, options in misp_attributes.items():
-            if relation == object_relation or "value" not in options:
+        for relation, relation_options in misp_attributes.items():
+            if relation == object_relation or "value" not in relation_options:
                 continue
-            relation_value = options.get("value")
+            relation_value = relation_options.get("value")
             if callable(relation_value):
                 relation_value = relation_value(value)
             relation_attribute = self._add_object_attribute_if_missing(
                 obj,
                 relation,
                 relation_value,
-                self._required_mapping_attribute_type(object_name, relation, options),
-                disable_correlation=not bool(misp_attributes.get(relation, {}).get("correlate", False)),
+                self._required_mapping_attribute_type(object_name, relation, relation_options),
+                disable_correlation=not bool(relation_options.get("correlate", False)),
             )
             relation_updates.append((relation, relation_value, relation_attribute))
 
@@ -627,19 +627,18 @@ class MISPService(ServiceBase):
             object_value_index[index_key][normalized] = obj
 
         for relation, relation_value, relation_attribute in relation_updates:
+            relation_options = misp_attributes.get(relation, {})
+            correlate_enabled = bool(relation_options.get("correlate", False))
+            ids_enabled = bool(relation_options.get("ids", False))
+            tag_enabled = bool(relation_options.get("tag", False))
+
             if relation_attribute is not None:
                 if hasattr(relation_attribute, "disable_correlation"):
-                    relation_attribute.disable_correlation = not bool(
-                        misp_attributes.get(relation, {}).get("correlate", False)
-                    )
+                    relation_attribute.disable_correlation = not correlate_enabled
 
-                if bool(misp_attributes.get(relation, {}).get("tag", False)):
-                    self._tag_attribute_if_needed(
-                        relation_attribute,
-                        score,
-                        force_to_ids_false=not bool(misp_attributes.get(relation, {}).get("ids", False)),
-                    )
-                elif not bool(misp_attributes.get(relation, {}).get("ids", False)):
+                if tag_enabled:
+                    self._tag_attribute_if_needed(relation_attribute, score, force_to_ids_false=not ids_enabled)
+                elif not ids_enabled:
                     relation_attribute.to_ids = False
 
             if obj.name == "file" and relation in {"sha256", "filename"} and relation_value is not None:
