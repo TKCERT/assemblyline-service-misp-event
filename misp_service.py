@@ -634,46 +634,11 @@ class MISPService(ServiceBase):
         source_file_relationship = mapping.get("misp_source_file_relationship", default_source_file_relationship)
 
         existing_object = object_value_index.setdefault(index_key, {}).get(normalized)
-        if existing_object:
-            existing_primary_attribute = self._add_object_attribute_if_missing(
-                existing_object,
-                object_relation,
-                value,
-                self._required_mapping_attribute_type(object_name, object_relation, primary_relation_options),
-                disable_correlation=_disable_correlation(object_relation),
-            )
-            _apply_relation_flags(existing_primary_attribute, object_relation)
+        object_created = existing_object is None
+        obj = existing_object if existing_object is not None else MISPObject(name=object_name)
 
-            for relation, options in misp_attributes.items():
-                if relation == object_relation or "value" not in options:
-                    continue
-                attr_type = self._required_mapping_attribute_type(object_name, relation, options)
-                raw_value = options.get("value")
-                if callable(raw_value):
-                    raw_value = raw_value(value)
-                existing_attribute = self._add_object_attribute_if_missing(
-                    existing_object,
-                    relation,
-                    raw_value,
-                    attr_type,
-                    disable_correlation=_disable_correlation(relation),
-                )
-                _apply_relation_flags(existing_attribute, relation)
-                _sync_object_index_for_relation(existing_object, relation, raw_value)
+        relation_updates: List[Tuple[str, Any, Any]] = []
 
-            _sync_object_index_for_relation(existing_object, object_relation, value)
-
-            if source_file_relationship:
-                link_created = self._link_object_to_source_file(
-                    existing_object,
-                    source_file_obj,
-                    str(source_file_relationship),
-                )
-            else:
-                link_created = False
-            return False, link_created
-
-        obj = MISPObject(name=object_name)
         primary_attribute = self._add_object_attribute_if_missing(
             obj,
             object_relation,
@@ -681,41 +646,36 @@ class MISPService(ServiceBase):
             self._required_mapping_attribute_type(object_name, object_relation, primary_relation_options),
             disable_correlation=_disable_correlation(object_relation),
         )
+        relation_updates.append((object_relation, value, primary_attribute))
 
-        created_attributes: Dict[str, Any] = {object_relation: primary_attribute}
-        created_relation_values: Dict[str, Any] = {object_relation: value}
         for relation, options in misp_attributes.items():
             if relation == object_relation or "value" not in options:
                 continue
-            attr_type = self._required_mapping_attribute_type(object_name, relation, options)
-            raw_value = options.get("value")
-            if callable(raw_value):
-                raw_value = raw_value(value)
-            created_attributes[relation] = self._add_object_attribute_if_missing(
+            relation_value = options.get("value")
+            if callable(relation_value):
+                relation_value = relation_value(value)
+            relation_attribute = self._add_object_attribute_if_missing(
                 obj,
                 relation,
-                raw_value,
-                attr_type,
+                relation_value,
+                self._required_mapping_attribute_type(object_name, relation, options),
                 disable_correlation=_disable_correlation(relation),
             )
-            created_relation_values[relation] = raw_value
+            relation_updates.append((relation, relation_value, relation_attribute))
 
-        event.add_object(obj)
-        object_value_index[index_key][normalized] = obj
-        for relation, attribute in created_attributes.items():
-            _apply_relation_flags(attribute, relation)
-            relation_value = created_relation_values.get(relation)
+        if object_created:
+            event.add_object(obj)
+            object_value_index[index_key][normalized] = obj
+
+        for relation, relation_value, relation_attribute in relation_updates:
+            _apply_relation_flags(relation_attribute, relation)
             _sync_object_index_for_relation(obj, relation, relation_value)
 
         if source_file_relationship:
-            link_created = self._link_object_to_source_file(
-                obj,
-                source_file_obj,
-                str(source_file_relationship),
-            )
+            link_created = self._link_object_to_source_file(obj, source_file_obj, str(source_file_relationship))
         else:
             link_created = False
-        return True, link_created
+        return object_created, link_created
 
     def _process_tag_mapping(
         self,
