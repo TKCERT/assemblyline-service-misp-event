@@ -585,47 +585,6 @@ class MISPService(ServiceBase):
 
         primary_relation_options = misp_attributes.get(object_relation, {})
 
-        def _ids_enabled(relation: str) -> bool:
-            return bool(misp_attributes.get(relation, {}).get("ids", False))
-
-        def _disable_correlation(relation: str) -> bool:
-            return not bool(misp_attributes.get(relation, {}).get("correlate", False))
-
-        def _tag_enabled(relation: str) -> bool:
-            return bool(misp_attributes.get(relation, {}).get("tag", False))
-
-        def _apply_relation_flags(attribute: Any, relation: str) -> None:
-            if attribute is None:
-                return
-            if hasattr(attribute, "disable_correlation"):
-                attribute.disable_correlation = _disable_correlation(relation)
-
-            if _tag_enabled(relation):
-                self._tag_attribute_if_needed(
-                    attribute,
-                    score,
-                    force_to_ids_false=not _ids_enabled(relation),
-                )
-            elif not _ids_enabled(relation):
-                attribute.to_ids = False
-
-        def _sync_object_index_for_relation(
-            obj: MISPObject,
-            relation: str,
-            relation_value: Any,
-        ) -> None:
-            if obj.name != "file":
-                return
-            if relation not in {"sha256", "filename"}:
-                return
-            if relation_value is None:
-                return
-            relation_value_norm = str(relation_value).strip().lower()
-            if not relation_value_norm:
-                return
-            relation_bucket_key = self._object_attribute_index_key("file", relation)
-            object_value_index.setdefault(relation_bucket_key, {})[relation_value_norm] = obj
-
         default_source_file_relationship: Optional[str]
         if object_name == "file":
             default_source_file_relationship = None
@@ -644,7 +603,7 @@ class MISPService(ServiceBase):
             object_relation,
             value,
             self._required_mapping_attribute_type(object_name, object_relation, primary_relation_options),
-            disable_correlation=_disable_correlation(object_relation),
+            disable_correlation=not bool(misp_attributes.get(object_relation, {}).get("correlate", False)),
         )
         relation_updates.append((object_relation, value, primary_attribute))
 
@@ -659,7 +618,7 @@ class MISPService(ServiceBase):
                 relation,
                 relation_value,
                 self._required_mapping_attribute_type(object_name, relation, options),
-                disable_correlation=_disable_correlation(relation),
+                disable_correlation=not bool(misp_attributes.get(relation, {}).get("correlate", False)),
             )
             relation_updates.append((relation, relation_value, relation_attribute))
 
@@ -668,8 +627,26 @@ class MISPService(ServiceBase):
             object_value_index[index_key][normalized] = obj
 
         for relation, relation_value, relation_attribute in relation_updates:
-            _apply_relation_flags(relation_attribute, relation)
-            _sync_object_index_for_relation(obj, relation, relation_value)
+            if relation_attribute is not None:
+                if hasattr(relation_attribute, "disable_correlation"):
+                    relation_attribute.disable_correlation = not bool(
+                        misp_attributes.get(relation, {}).get("correlate", False)
+                    )
+
+                if bool(misp_attributes.get(relation, {}).get("tag", False)):
+                    self._tag_attribute_if_needed(
+                        relation_attribute,
+                        score,
+                        force_to_ids_false=not bool(misp_attributes.get(relation, {}).get("ids", False)),
+                    )
+                elif not bool(misp_attributes.get(relation, {}).get("ids", False)):
+                    relation_attribute.to_ids = False
+
+            if obj.name == "file" and relation in {"sha256", "filename"} and relation_value is not None:
+                relation_value_norm = str(relation_value).strip().lower()
+                if relation_value_norm:
+                    relation_bucket_key = self._object_attribute_index_key("file", relation)
+                    object_value_index.setdefault(relation_bucket_key, {})[relation_value_norm] = obj
 
         if source_file_relationship:
             link_created = self._link_object_to_source_file(obj, source_file_obj, str(source_file_relationship))
