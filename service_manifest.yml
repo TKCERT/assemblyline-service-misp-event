@@ -32,6 +32,7 @@ uses_temp_submission_data: true
 #     NOTE: The key names can be anything and the value can be of any types
 config:
   misp_service_url: ""
+  misp_service_api_url: ""
   misp_service_api_key: ""
   verify_certificate: true
 

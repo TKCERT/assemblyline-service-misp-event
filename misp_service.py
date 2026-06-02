@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.request import ServiceRequest
-from assemblyline_v4_service.common.result import BODY_FORMAT, Result, ResultSection
+from assemblyline_v4_service.common.result import BODY_FORMAT, Result, ResultSection, ResultURLSection
 
 from pymisp import ExpandedPyMISP, MISPEvent, MISPObject
 
@@ -130,6 +130,7 @@ WORKFLOW_REVIEW_TAG = 'workflow:todo="review-before-publication"'
 
 class MISPService(ServiceBase):
     MISP_SERVICE_URL_CONFIG_KEY: str = "misp_service_url"
+    MISP_SERVICE_API_URL_CONFIG_KEY: str = "misp_service_api_url"
     MISP_SERVICE_API_KEY_CONFIG_KEY: str = "misp_service_api_key"
     SUBMISSION_EVENT_INFO_PREFIX: str = "Assemblyline Submission"
     MALWARE_ANALYSIS_PRODUCT: str = "Assemblyline"
@@ -150,11 +151,12 @@ class MISPService(ServiceBase):
         super(MISPService, self).__init__(config)
 
         self.misp_service_url = self.config.get(self.MISP_SERVICE_URL_CONFIG_KEY)
+        self.misp_service_api_url = self.config.get(self.MISP_SERVICE_API_URL_CONFIG_KEY, self.misp_service_url)
         self.misp_service_api_key = self.config.get(self.MISP_SERVICE_API_KEY_CONFIG_KEY)
         self.verify = self.config.get("verify_certificate", True)
 
-        if not self.misp_service_url:
-            raise RuntimeError("MISP service URL not set in the config. Check the config section in the manifest?")
+        if not self.misp_service_api_url:
+            raise RuntimeError("MISP service API URL not set in the config. Check the config section in the manifest?")
 
         if not self.misp_service_api_key:
             raise RuntimeError("MISP service API key not set in the config. Check the config section in the manifest?")
@@ -162,7 +164,8 @@ class MISPService(ServiceBase):
     def start(self):
         self.log.info(f"start() from {self.service_attributes.name} service called")
 
-        self.pymisp = ExpandedPyMISP(self.misp_service_url, self.misp_service_api_key, self.verify, tool="Assemblyline")
+        self.pymisp = ExpandedPyMISP(self.misp_service_api_url, self.misp_service_api_key,
+                                     ssl=self.verify, tool=self.service_attributes.name)
 
     def _json_dump(self, data: Any) -> str:
         return json.dumps(data, indent=2, default=str)
@@ -892,14 +895,6 @@ class MISPService(ServiceBase):
         result = Result()
 
         # ==================================================================
-        # ServiceResult data including request task metadata
-        #
-        data = request.task.get_service_result()
-        result_section = ResultSection('ServiceResult data', body_format=BODY_FORMAT.MEMORY_DUMP,
-                        body=self._json_dump(data), auto_collapse=True)
-        result.add_section(result_section)
-
-        # ==================================================================
         # Tags generated from other services
         #
         # NOTE: To be able to use this, the service must set "uses_tags: true"
@@ -964,6 +959,15 @@ class MISPService(ServiceBase):
             body_format=BODY_FORMAT.MEMORY_DUMP,
             body=self._json_dump(sync_summary),
         )
-        result.add_section(misp_sync_section)
+        result.add_section(misp_sync_section, on_top=True)
+
+        base_url = self.misp_service_url or self.misp_service_api_url
+        if base_url and sync_summary.get("event_id") and sync_summary.get("event_uuid"):
+            misp_url_section = ResultURLSection('MISP Event')
+            misp_url_section.add_url(
+                f"{base_url}/events/view/{sync_summary['event_id']}",
+                f"View event {sync_summary['event_id']} ({sync_summary['event_uuid']}) in MISP",
+            )
+            result.add_section(misp_url_section, on_top=True)
 
         request.result = result
