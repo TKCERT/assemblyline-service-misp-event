@@ -151,7 +151,7 @@ class MISPService(ServiceBase):
         super(MISPService, self).__init__(config)
 
         self.misp_service_url = self.config.get(self.MISP_SERVICE_URL_CONFIG_KEY)
-        self.misp_service_api_url = self.config.get(self.MISP_SERVICE_API_URL_CONFIG_KEY, self.misp_service_url)
+        self.misp_service_api_url = self.config.get(self.MISP_SERVICE_API_URL_CONFIG_KEY) or self.misp_service_url
         self.misp_service_api_key = self.config.get(self.MISP_SERVICE_API_KEY_CONFIG_KEY)
         self.verify = self.config.get("verify_certificate", True)
 
