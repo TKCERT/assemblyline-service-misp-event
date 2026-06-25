@@ -21,7 +21,7 @@ from pymisp import ExpandedPyMISP, MISPEvent, MISPObject
 #   Defaults: ids=False, correlate=False, tag=False.
 # - misp_source_file_relationship: Optional reference relationship from object to source file.
 #   Defaults to derived-from for non-file object mappings; omitted for file mappings unless needed.
-TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
+TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
     {
         "al_tag_patterns": ["network.dynamic.uri", "network.static.uri"],
         "misp_object_name": "url",
@@ -117,6 +117,20 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, Any]] = [
     },
 ]
 
+SUBMISSION_EVENT_INFO_PREFIX: str = "Assemblyline Submission"
+MALWARE_ANALYSIS_PRODUCT: str = "Assemblyline"
+SUBMISSION_CONFIGURATION_VERSION_PREFIX: str = "submission-id:"
+DEFAULT_ANCESTRY_RELATIONSHIP_TYPE: str = "derived-from"
+PARENT_RELATION_TO_MISP_RELATIONSHIP: Dict[str, str] = {
+    "DECRYPTED": "derived-from",
+    "DEOBFUSCATED": "derived-from",
+    "DOWNLOADED": "downloaded-from",
+    "DROPPED": "dropped-by",
+    "DYNAMIC": "dropped-by",
+    "EXTRACTED": "extracted-from",
+    "INCLUDED": "included-in",
+    "ROOT": "derived-from",
+}
 
 class MalwareAnalysisResult(IntEnum):
     UNKNOWN = 0
@@ -132,20 +146,6 @@ class MISPService(ServiceBase):
     MISP_SERVICE_URL_CONFIG_KEY: str = "misp_service_url"
     MISP_SERVICE_API_URL_CONFIG_KEY: str = "misp_service_api_url"
     MISP_SERVICE_API_KEY_CONFIG_KEY: str = "misp_service_api_key"
-    SUBMISSION_EVENT_INFO_PREFIX: str = "Assemblyline Submission"
-    MALWARE_ANALYSIS_PRODUCT: str = "Assemblyline"
-    SUBMISSION_CONFIGURATION_VERSION_PREFIX: str = "submission-id:"
-    DEFAULT_ANCESTRY_RELATIONSHIP_TYPE: str = "derived-from"
-    PARENT_RELATION_TO_MISP_RELATIONSHIP: Dict[str, str] = {
-        "DECRYPTED": "derived-from",
-        "DEOBFUSCATED": "derived-from",
-        "DOWNLOADED": "downloaded-from",
-        "DROPPED": "dropped-by",
-        "DYNAMIC": "dropped-by",
-        "EXTRACTED": "extracted-from",
-        "INCLUDED": "included-in",
-        "ROOT": "derived-from",
-    }
 
     def __init__(self, config: Optional[Dict] = None) -> None:
         super(MISPService, self).__init__(config)
@@ -171,17 +171,17 @@ class MISPService(ServiceBase):
         return json.dumps(data, indent=2, default=str)
 
     def _submission_event_info(self, sid: str) -> str:
-        return f"{self.SUBMISSION_EVENT_INFO_PREFIX} {sid}"
+        return f"{SUBMISSION_EVENT_INFO_PREFIX} {sid}"
 
     def _submission_configuration_version_marker(self, sid: str) -> str:
-        return f"{self.SUBMISSION_CONFIGURATION_VERSION_PREFIX}{sid}"
+        return f"{SUBMISSION_CONFIGURATION_VERSION_PREFIX}{sid}"
 
     def _relationship_type_for_parent_relation(self, parent_relation: Optional[str]) -> str:
         if not parent_relation:
-            return self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
-        return self.PARENT_RELATION_TO_MISP_RELATIONSHIP.get(
+            return DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
+        return PARENT_RELATION_TO_MISP_RELATIONSHIP.get(
             str(parent_relation).upper(),
-            self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE,
+            DEFAULT_ANCESTRY_RELATIONSHIP_TYPE,
         )
 
     def _normalize_events(self, raw_events: Any) -> Iterable[MISPEvent]:
@@ -231,7 +231,7 @@ class MISPService(ServiceBase):
 
     def _event_has_submission_marker(self, event: MISPEvent, sid: str) -> bool:
         marker = self._submission_configuration_version_marker(sid)
-        expected_product = self.MALWARE_ANALYSIS_PRODUCT.lower()
+        expected_product = MALWARE_ANALYSIS_PRODUCT.lower()
         expected_marker = marker.lower()
 
         for obj in event.objects:
@@ -521,7 +521,7 @@ class MISPService(ServiceBase):
         if source_file_obj is None or obj.uuid == source_file_obj.uuid:
             return False
 
-        relation = relationship_type or self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
+        relation = relationship_type or DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
         reference_count_before = len(obj.references)
         self._add_reference_if_missing(obj, source_file_obj, relation)
         return len(obj.references) > reference_count_before
@@ -574,7 +574,7 @@ class MISPService(ServiceBase):
 
         primary_relation_options = misp_attributes.get(object_relation, {})
 
-        default_source_file_relationship = None if object_name == "file" else self.DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
+        default_source_file_relationship = None if object_name == "file" else DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
         source_file_relationship = mapping.get("misp_source_file_relationship", default_source_file_relationship)
 
         existing_object = object_value_index.setdefault(index_key, {}).get(normalized)
@@ -735,14 +735,14 @@ class MISPService(ServiceBase):
             analysis_result = self._highest_malware_analysis_result(existing_result, analysis_result)
             analysis_result_label = self._malware_analysis_result_label(analysis_result)
 
-            self._add_object_attribute_if_missing(obj, "product", self.MALWARE_ANALYSIS_PRODUCT, "text", True)
+            self._add_object_attribute_if_missing(obj, "product", MALWARE_ANALYSIS_PRODUCT, "text", True)
             self._set_object_attribute_value(obj, "result", analysis_result_label, "text")
             if source_file_obj is not None and obj.uuid != source_file_obj.uuid:
                 self._add_reference_if_missing(source_file_obj, obj, "analysed-with")
             return False
 
         obj = MISPObject(name="malware-analysis")
-        self._add_object_attribute_if_missing(obj, "product", self.MALWARE_ANALYSIS_PRODUCT, "text", True)
+        self._add_object_attribute_if_missing(obj, "product", MALWARE_ANALYSIS_PRODUCT, "text", True)
         self._add_object_attribute_if_missing(obj, "configuration_version", marker, "text", False)
         self._add_object_attribute_if_missing(obj, "result", analysis_result_label, "text", False)
         event.add_object(obj)
