@@ -138,14 +138,28 @@ class MalwareAnalysisResult(IntEnum):
     SUSPICIOUS = 2
     MALICIOUS = 3
 
+DEFAULT_ATTRIBUTE_TAG_NAME: str = "ifx-vetting:vetted"
+DEFAULT_ATTRIBUTE_TAG_VALUE: Dict[MalwareAnalysisResult, str] = {
+    MalwareAnalysisResult.SUSPICIOUS: "malicious-uncertain",
+    MalwareAnalysisResult.MALICIOUS: "malicious",
+}
+DEFAULT_EVENT_TAG_NAME: str = "tkcert:AnalysisResult"
+DEFAULT_EVENT_TAG_VALUE: Dict[str, str] = {
+    "malicious-uncertain": "suspicious",
+    "malicious": "malicious",
+}
+DEFAULT_WORKFLOW_REVIEW_TAG: str = 'workflow:todo="review-before-publication"'
 
-IFX_VETTING_TAG_PREFIX = "ifx-vetting:vetted"
-WORKFLOW_REVIEW_TAG = 'workflow:todo="review-before-publication"'
 
 class MISPService(ServiceBase):
     MISP_SERVICE_URL_CONFIG_KEY: str = "misp_service_url"
     MISP_SERVICE_API_URL_CONFIG_KEY: str = "misp_service_api_url"
     MISP_SERVICE_API_KEY_CONFIG_KEY: str = "misp_service_api_key"
+    ATTRIBUTE_TAG_NAME_CONFIG_KEY: str = "attribute_tag_name"
+    ATTRIBUTE_TAG_VALUE_CONFIG_KEY: str = "attribute_tag_value_from_result"
+    EVENT_TAG_NAME_CONFIG_KEY: str = "event_tag_name"
+    EVENT_TAG_VALUE_CONFIG_KEY: str = "event_tag_value_from_attribute"
+    WORKFLOW_REVIEW_TAG_CONFIG_KEY: str = "workflow_review_tag"
 
     def __init__(self, config: Optional[Dict] = None) -> None:
         super(MISPService, self).__init__(config)
@@ -153,6 +167,11 @@ class MISPService(ServiceBase):
         self.misp_service_url = self.config.get(self.MISP_SERVICE_URL_CONFIG_KEY)
         self.misp_service_api_url = self.config.get(self.MISP_SERVICE_API_URL_CONFIG_KEY) or self.misp_service_url
         self.misp_service_api_key = self.config.get(self.MISP_SERVICE_API_KEY_CONFIG_KEY)
+        self.attribute_tag_name = self.config.get(self.ATTRIBUTE_TAG_NAME_CONFIG_KEY, DEFAULT_ATTRIBUTE_TAG_NAME)
+        self.attribute_tag_value = self.config.get(self.ATTRIBUTE_TAG_VALUE_CONFIG_KEY, DEFAULT_ATTRIBUTE_TAG_VALUE)
+        self.event_tag_name = self.config.get(self.EVENT_TAG_NAME_CONFIG_KEY, DEFAULT_EVENT_TAG_NAME)
+        self.event_tag_value = self.config.get(self.EVENT_TAG_VALUE_CONFIG_KEY, DEFAULT_EVENT_TAG_VALUE)
+        self.workflow_review_tag = self.config.get(self.WORKFLOW_REVIEW_TAG_CONFIG_KEY, DEFAULT_WORKFLOW_REVIEW_TAG)
         self.verify = self.config.get("verify_certificate", True)
 
         if not self.misp_service_api_url:
@@ -335,18 +354,10 @@ class MISPService(ServiceBase):
 
         self._add_object_attribute_if_missing(obj, object_relation, value, attr_type)
 
-    def _ifx_vetting_rank(self, tag_value: str) -> int:
-        normalized = tag_value.strip().lower()
-        if normalized == "malicious":
-            return 2
-        if normalized in {"malicious-uncertain", "suspicious"}:
-            return 1
-        return 0
-
-    def _highest_ifx_vetting_tag_name(self, event: MISPEvent) -> Optional[str]:
+    def _highest_attribute_tag_value(self, event: MISPEvent) -> Optional[str]:
         highest_value: Optional[str] = None
-        highest_rank = 0
-        prefix = f'{IFX_VETTING_TAG_PREFIX}="'
+        highest_result = MalwareAnalysisResult.UNKNOWN
+        prefix = f'{self.attribute_tag_name}="'
 
         for obj in event.objects:
             for attribute in getattr(obj, "attributes", []) or []:
@@ -355,28 +366,31 @@ class MISPService(ServiceBase):
                     if not raw_name.lower().startswith(prefix.lower()) or not raw_name.endswith('"'):
                         continue
                     tag_value = raw_name[len(prefix):-1]
-                    rank = self._ifx_vetting_rank(tag_value)
-                    if rank > highest_rank:
-                        highest_rank = rank
+                    analysis_result = self._malware_analysis_result_from_attribute_tag(tag_value)
+                    if analysis_result > highest_result:
+                        highest_result = analysis_result
                         highest_value = tag_value
 
-        if highest_rank == 0 or not highest_value:
+        if highest_result == MalwareAnalysisResult.UNKNOWN or not highest_value:
             return None
-        return f'{IFX_VETTING_TAG_PREFIX}="{highest_value}"'
+        return highest_value
 
-    def _apply_event_tags_from_ifx_vetting(self, event: MISPEvent) -> None:
-        highest_ifx_tag = self._highest_ifx_vetting_tag_name(event)
-        if highest_ifx_tag:
-            event.add_tag(highest_ifx_tag)
-            event.add_tag(WORKFLOW_REVIEW_TAG)
+    def _apply_event_tags(self, event: MISPEvent) -> None:
+        highest_attribute_tag_value = self._highest_attribute_tag_value(event)
+        if not highest_attribute_tag_value:
+            return
 
-    def _ifx_vetting_tag_value(self, score: Optional[int]) -> Optional[str]:
+        event_tag_value = self.event_tag_value.get(highest_attribute_tag_value)
+        if not event_tag_value:
+            return
+
+        event.add_tag(f'{self.event_tag_name}="{event_tag_value}"')
+        event.add_tag(self.workflow_review_tag)
+
+    def _attribute_tag_value(self, score: Optional[int]) -> Optional[str]:
         result = self._malware_analysis_result_for_score(score)
-        if result == MalwareAnalysisResult.MALICIOUS:
-            return "malicious"
-        if result == MalwareAnalysisResult.SUSPICIOUS:
-            return "malicious-uncertain"
-        return None
+        result_label = self._malware_analysis_result_label(result)
+        return self.attribute_tag_value.get(result) or self.attribute_tag_value.get(result_label)
 
     def _tag_attribute_if_needed(
         self,
@@ -386,14 +400,14 @@ class MISPService(ServiceBase):
     ) -> None:
         if attribute is None:
             return
-        tag_value = self._ifx_vetting_tag_value(score)
+        tag_value = self._attribute_tag_value(score)
         if force_to_ids_false:
             attribute.to_ids = False
         else:
             attribute.to_ids = tag_value is not None
         if tag_value is None:
             return
-        tag_name = f'{IFX_VETTING_TAG_PREFIX}="{tag_value}"'
+        tag_name = f'{self.attribute_tag_name}="{tag_value}"'
         attribute.add_tag(tag_name)
 
     def _add_object_attribute_if_missing(
@@ -694,6 +708,15 @@ class MISPService(ServiceBase):
         existing_result = self._malware_analysis_result_from_value(current_result)
         return max(existing_result, new_result)
 
+    def _malware_analysis_result_from_attribute_tag(self, tag_value: str) -> MalwareAnalysisResult:
+        normalized = tag_value.strip().lower()
+
+        for result_key, configured_tag_value in self.attribute_tag_value.items():
+            if str(configured_tag_value).strip().lower() == normalized:
+                return self._malware_analysis_result_from_value(result_key)
+
+        return MalwareAnalysisResult.UNKNOWN
+
     def _max_tag_score(self, tags: Dict[str, Any]) -> Optional[int]:
         max_score: Optional[int] = None
 
@@ -851,7 +874,7 @@ class MISPService(ServiceBase):
         for mapping in TAG_PROCESSING_MAPPINGS:
             self._process_tag_mapping(event, mapping, tags, object_value_index, source_file_obj, stats)
 
-        self._apply_event_tags_from_ifx_vetting(event)
+        self._apply_event_tags(event)
 
         stats["new_file_objects"] = self._count_file_objects(event) - existing_file_count
         return stats

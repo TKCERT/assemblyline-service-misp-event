@@ -34,6 +34,15 @@ config:
   misp_service_url: ""
   misp_service_api_url: ""
   misp_service_api_key: ""
+  attribute_tag_name: "ifx-vetting:vetted"
+  attribute_tag_value_from_result:
+    suspicious: "malicious-uncertain"
+    malicious: "malicious"
+  event_tag_name: "tkcert:AnalysisResult"
+  event_tag_value_from_attribute:
+    malicious-uncertain: "suspicious"
+    malicious: "malicious"
+  workflow_review_tag: 'workflow:todo="review-before-publication"'
   verify_certificate: true
 
 # Submission params block:
