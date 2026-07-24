@@ -168,9 +168,12 @@ class MISPService(ServiceBase):
         self.misp_service_api_url = self.config.get(self.MISP_SERVICE_API_URL_CONFIG_KEY) or self.misp_service_url
         self.misp_service_api_key = self.config.get(self.MISP_SERVICE_API_KEY_CONFIG_KEY)
         self.attribute_tag_name = self.config.get(self.ATTRIBUTE_TAG_NAME_CONFIG_KEY, DEFAULT_ATTRIBUTE_TAG_NAME)
-        self.attribute_tag_value = self.config.get(self.ATTRIBUTE_TAG_VALUE_CONFIG_KEY, DEFAULT_ATTRIBUTE_TAG_VALUE)
+        _raw_attribute_tag_value = self.config.get(self.ATTRIBUTE_TAG_VALUE_CONFIG_KEY, DEFAULT_ATTRIBUTE_TAG_VALUE)
+        self.attribute_tag_value = self._normalize_result_to_attribute_tag_mapping(_raw_attribute_tag_value)
+        self.attribute_tag_result = self._invert_attribute_tag_mapping(self.attribute_tag_value)
         self.event_tag_name = self.config.get(self.EVENT_TAG_NAME_CONFIG_KEY, DEFAULT_EVENT_TAG_NAME)
-        self.event_tag_value = self.config.get(self.EVENT_TAG_VALUE_CONFIG_KEY, DEFAULT_EVENT_TAG_VALUE)
+        _raw_event_tag_value = self.config.get(self.EVENT_TAG_VALUE_CONFIG_KEY, DEFAULT_EVENT_TAG_VALUE)
+        self.event_tag_value = self._normalize_attribute_to_event_tag_mapping(_raw_event_tag_value)
         self.workflow_review_tag = self.config.get(self.WORKFLOW_REVIEW_TAG_CONFIG_KEY, DEFAULT_WORKFLOW_REVIEW_TAG)
         self.verify = self.config.get("verify_certificate", True)
 
@@ -354,6 +357,89 @@ class MISPService(ServiceBase):
 
         self._add_object_attribute_if_missing(obj, object_relation, value, attr_type)
 
+    def _normalize_result_to_attribute_tag_mapping(
+        self,
+        raw_mapping: Optional[Dict[Any, Any]],
+    ) -> Dict[MalwareAnalysisResult, str]:
+        normalized_mapping: Dict[MalwareAnalysisResult, str] = {}
+
+        for result_key, tag_value in (raw_mapping or {}).items():
+            result = self._malware_analysis_result_from_value(result_key)
+            if result == MalwareAnalysisResult.UNKNOWN:
+                continue
+
+            normalized_tag_value = self._value_norm_key(tag_value)
+            if not normalized_tag_value:
+                continue
+
+            normalized_mapping[result] = normalized_tag_value
+
+        return normalized_mapping
+
+    def _invert_attribute_tag_mapping(
+        self,
+        result_to_attribute_tag_mapping: Dict[MalwareAnalysisResult, str],
+    ) -> Dict[str, MalwareAnalysisResult]:
+        return {
+            self._value_norm_key(tag_value): result
+            for result, tag_value in result_to_attribute_tag_mapping.items()
+            if self._value_norm_key(tag_value)
+        }
+
+    def _normalize_attribute_to_event_tag_mapping(self, raw_mapping: Optional[Dict[Any, Any]]) -> Dict[str, str]:
+        normalized_mapping: Dict[str, str] = {}
+
+        for attribute_tag_value, event_tag_value in (raw_mapping or {}).items():
+            normalized_attribute_tag_value = self._value_norm_key(attribute_tag_value)
+            if not normalized_attribute_tag_value:
+                continue
+
+            event_tag_value_str = str(event_tag_value).strip()
+            if not event_tag_value_str:
+                continue
+
+            normalized_mapping[normalized_attribute_tag_value] = event_tag_value_str
+
+        return normalized_mapping
+
+    def _normalize_mapping_definition(self, mapping: Dict[str, Any]) -> Dict[str, Any]:
+        object_name = str(mapping["misp_object_name"])
+        raw_misp_attributes = mapping.get("misp_attributes", {}) or {}
+        misp_attributes = {
+            str(relation): dict(options or {})
+            for relation, options in raw_misp_attributes.items()
+        }
+
+        primary_relations = [
+            relation for relation, options in misp_attributes.items()
+            if "value" not in options
+        ]
+        if len(primary_relations) != 1:
+            raise RuntimeError(
+                "Each mapping must define exactly one primary misp_attributes entry without 'value'."
+            )
+
+        for relation, options in misp_attributes.items():
+            attr_type = options.get("type")
+            if isinstance(attr_type, str) and attr_type.strip():
+                options["type"] = attr_type.strip()
+                continue
+            raise RuntimeError(
+                f"Mapping for object '{object_name}' relation '{relation}' must define a non-empty 'type'."
+            )
+
+        primary_relation = primary_relations[0]
+        default_source_file_relationship = None if object_name == "file" else DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
+        source_file_relationship = mapping.get("misp_source_file_relationship", default_source_file_relationship)
+
+        return {
+            "object_name": object_name,
+            "misp_attributes": misp_attributes,
+            "primary_relation": primary_relation,
+            "primary_relation_options": misp_attributes.get(primary_relation, {}),
+            "source_file_relationship": source_file_relationship,
+        }
+
     def _highest_attribute_tag_value(self, event: MISPEvent) -> Optional[str]:
         highest_value: Optional[str] = None
         highest_result = MalwareAnalysisResult.UNKNOWN
@@ -380,7 +466,7 @@ class MISPService(ServiceBase):
         if not highest_attribute_tag_value:
             return
 
-        event_tag_value = self.event_tag_value.get(highest_attribute_tag_value)
+        event_tag_value = self.event_tag_value.get(self._value_norm_key(highest_attribute_tag_value))
         if not event_tag_value:
             return
 
@@ -389,8 +475,7 @@ class MISPService(ServiceBase):
 
     def _attribute_tag_value(self, score: Optional[int]) -> Optional[str]:
         result = self._malware_analysis_result_for_score(score)
-        result_label = self._malware_analysis_result_label(result)
-        return self.attribute_tag_value.get(result) or self.attribute_tag_value.get(result_label)
+        return self.attribute_tag_value.get(result)
 
     def _tag_attribute_if_needed(
         self,
@@ -443,8 +528,8 @@ class MISPService(ServiceBase):
                 )
             return obj.add_attribute(object_relation, value, type=attr_type, disable_correlation=disable_correlation)
 
-    def _value_norm_key(self, value: str) -> str:
-        return value.strip().lower()
+    def _value_norm_key(self, value: Any) -> str:
+        return str(value).strip().lower()
 
     def _object_attribute_index_key(self, object_name: str, object_relation: str) -> str:
         return f"{object_name}:{object_relation}"
@@ -540,37 +625,6 @@ class MISPService(ServiceBase):
         self._add_reference_if_missing(obj, source_file_obj, relation)
         return len(obj.references) > reference_count_before
 
-    def _mapping_misp_attributes(self, mapping: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        raw_misp_attributes = mapping.get("misp_attributes", {}) or {}
-        return {
-            str(relation): dict(options or {})
-            for relation, options in raw_misp_attributes.items()
-        }
-
-    def _primary_mapping_relation(self, misp_attributes: Dict[str, Dict[str, Any]]) -> str:
-        primary_relations = [
-            relation for relation, options in misp_attributes.items()
-            if "value" not in options
-        ]
-        if len(primary_relations) != 1:
-            raise RuntimeError(
-                "Each mapping must define exactly one primary misp_attributes entry without 'value'."
-            )
-        return primary_relations[0]
-
-    def _required_mapping_attribute_type(
-        self,
-        object_name: str,
-        relation: str,
-        options: Dict[str, Any],
-    ) -> str:
-        attr_type = options.get("type")
-        if isinstance(attr_type, str) and attr_type.strip():
-            return attr_type
-        raise RuntimeError(
-            f"Mapping for object '{object_name}' relation '{relation}' must define a non-empty 'type'."
-        )
-
     def _upsert_object_from_mapping(
         self,
         event: MISPEvent,
@@ -581,15 +635,13 @@ class MISPService(ServiceBase):
         score: Optional[int] = None,
     ) -> Tuple[bool, bool]:
         normalized = self._value_norm_key(value)
-        object_name = str(mapping["misp_object_name"])
-        misp_attributes = self._mapping_misp_attributes(mapping)
-        object_relation = self._primary_mapping_relation(misp_attributes)
+        normalized_mapping = self._normalize_mapping_definition(mapping)
+        object_name = normalized_mapping["object_name"]
+        misp_attributes = normalized_mapping["misp_attributes"]
+        object_relation = normalized_mapping["primary_relation"]
         index_key = self._object_attribute_index_key(object_name, object_relation)
-
-        primary_relation_options = misp_attributes.get(object_relation, {})
-
-        default_source_file_relationship = None if object_name == "file" else DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
-        source_file_relationship = mapping.get("misp_source_file_relationship", default_source_file_relationship)
+        primary_relation_options = normalized_mapping["primary_relation_options"]
+        source_file_relationship = normalized_mapping["source_file_relationship"]
 
         existing_object = object_value_index.setdefault(index_key, {}).get(normalized)
         object_created = existing_object is None
@@ -601,7 +653,7 @@ class MISPService(ServiceBase):
             obj,
             object_relation,
             value,
-            self._required_mapping_attribute_type(object_name, object_relation, primary_relation_options),
+            primary_relation_options["type"],
             disable_correlation=not bool(primary_relation_options.get("correlate", False)),
         )
         relation_updates.append((object_relation, value, primary_attribute))
@@ -616,7 +668,7 @@ class MISPService(ServiceBase):
                 obj,
                 relation,
                 relation_value,
-                self._required_mapping_attribute_type(object_name, relation, relation_options),
+                relation_options["type"],
                 disable_correlation=not bool(relation_options.get("correlate", False)),
             )
             relation_updates.append((relation, relation_value, relation_attribute))
@@ -641,7 +693,7 @@ class MISPService(ServiceBase):
                     relation_attribute.to_ids = False
 
             if obj.name == "file" and relation in {"sha256", "filename"} and relation_value is not None:
-                relation_value_norm = str(relation_value).strip().lower()
+                relation_value_norm = self._value_norm_key(relation_value)
                 if relation_value_norm:
                     relation_bucket_key = self._object_attribute_index_key("file", relation)
                     object_value_index.setdefault(relation_bucket_key, {})[relation_value_norm] = obj
@@ -709,13 +761,7 @@ class MISPService(ServiceBase):
         return max(existing_result, new_result)
 
     def _malware_analysis_result_from_attribute_tag(self, tag_value: str) -> MalwareAnalysisResult:
-        normalized = tag_value.strip().lower()
-
-        for result_key, configured_tag_value in self.attribute_tag_value.items():
-            if str(configured_tag_value).strip().lower() == normalized:
-                return self._malware_analysis_result_from_value(result_key)
-
-        return MalwareAnalysisResult.UNKNOWN
+        return self.attribute_tag_result.get(self._value_norm_key(tag_value), MalwareAnalysisResult.UNKNOWN)
 
     def _max_tag_score(self, tags: Dict[str, Any]) -> Optional[int]:
         max_score: Optional[int] = None
