@@ -1,8 +1,10 @@
 import json
+import uuid
 from enum import IntEnum
 from urllib.parse import urlsplit
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+import baseconv
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.request import ServiceRequest
 from assemblyline_v4_service.common.result import BODY_FORMAT, Result, ResultSection, ResultURLSection
@@ -198,6 +200,26 @@ class MISPService(ServiceBase):
     def _submission_configuration_version_marker(self, sid: str) -> str:
         return f"{SUBMISSION_CONFIGURATION_VERSION_PREFIX}{sid}"
 
+    def _submission_uuid_from_sid(self, sid: Optional[str]) -> Optional[str]:
+        if sid is None:
+            return None
+
+        sid_raw = str(sid).strip()
+        if not sid_raw:
+            return None
+
+        # Assemblyline IDs may include an optional prefix separated by underscore.
+        sid_token = sid_raw.rsplit("_", 1)[-1]
+        if not sid_token:
+            return None
+
+        try:
+            decoded_value = int(baseconv.base62.decode(sid_token))
+        except Exception:
+            return None
+
+        return str(uuid.UUID(int=decoded_value))
+
     def _relationship_type_for_parent_relation(self, parent_relation: Optional[str]) -> str:
         if not parent_relation:
             return DEFAULT_ANCESTRY_RELATIONSHIP_TYPE
@@ -277,6 +299,18 @@ class MISPService(ServiceBase):
         return False
 
     def _find_existing_event(self, sid: str) -> Optional[MISPEvent]:
+        expected_event_uuid = self._submission_uuid_from_sid(sid)
+        if expected_event_uuid:
+            uuid_search_result = self.pymisp.search(
+                controller="events",
+                return_format="json",
+                uuid=expected_event_uuid,
+                pythonify=True,
+            )
+            uuid_events = list(self._normalize_events(uuid_search_result))
+            if uuid_events:
+                return uuid_events[0]
+
         event_info = self._submission_event_info(sid)
         search_result = self.pymisp.search(
             controller="events",
@@ -934,6 +968,9 @@ class MISPService(ServiceBase):
             return event, "update"
 
         event = MISPEvent()
+        expected_event_uuid = self._submission_uuid_from_sid(sid)
+        if expected_event_uuid:
+            event.uuid = expected_event_uuid
         event.info = self._submission_event_info(sid)
         event.distribution = 0
         event.analysis = 2
