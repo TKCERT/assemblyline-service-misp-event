@@ -37,7 +37,7 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
         },
     },
     {
-        "al_tag_patterns": ["network.dynamic.domain", "network.static.domain"],
+        "al_tag_patterns": ["network.dynamic.domain", "network.static.domain", "network.tls.sni"],
         "misp_object_name": "domain-ip",
         "misp_attributes": {
             "domain": {"type": "domain", "ids": True, "correlate": True, "tag": True},
@@ -65,14 +65,14 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
         },
     },
     {
-        "al_tag_patterns": ["dynamic.registry_key"],
+        "al_tag_patterns": ["dynamic.registry_key", "dynamic.window.regkeys"],
         "misp_object_name": "registry-key",
         "misp_attributes": {
             "key": {"type": "regkey", "ids": True, "correlate": True, "tag": True},
         },
     },
     {
-        "al_tag_patterns": ["static.signature.name", "static.signature.category", "file.rule.yara", "av.virus_name"],
+        "al_tag_patterns": ["static.signature.name", "static.signature.category", "file.rule.yara", "av.virus_name", "av.heuristic"],
         "misp_object_name": "av-signature",
         "misp_attributes": {
             "signature": {"type": "text", "correlate": True},
@@ -88,7 +88,7 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
         },
     },
     {
-        "al_tag_patterns": ["dynamic.signature.family"],
+        "al_tag_patterns": ["dynamic.signature.family", "attribution.family", "attribution.implant"],
         "misp_object_name": "malware",
         "misp_attributes": {
             "name": {"type": "text", "correlate": True},
@@ -96,7 +96,7 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
         },
     },
     {
-        "al_tag_patterns": ["file.sha256"],
+        "al_tag_patterns": ["file.sha256", "code.sha256", "file.ole.macro.sha256"],
         "misp_object_name": "file",
         "misp_attributes": {
             "sha256": {"type": "sha256", "ids": True, "correlate": True, "tag": True},
