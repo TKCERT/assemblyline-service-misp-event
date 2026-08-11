@@ -575,44 +575,24 @@ class MISPService(ServiceBase):
     def _index_existing_object_values(self, event: MISPEvent) -> Dict[str, Dict[str, MISPObject]]:
         index: Dict[str, Dict[str, MISPObject]] = {}
 
+        indexed_relations_by_object: Dict[str, Set[str]] = {}
+        for mapping in TAG_PROCESSING_MAPPINGS:
+            normalized_mapping = self._normalize_mapping_definition(mapping)
+            indexed_relations_by_object.setdefault(
+                normalized_mapping["object_name"],
+                set(),
+            ).add(normalized_mapping["primary_relation"])
+
         for obj in event.objects:
-            if obj.name == "domain-ip":
-                for object_relation in ("domain", "ip"):
-                    bucket_key = self._object_attribute_index_key("domain-ip", object_relation)
-                    index.setdefault(bucket_key, {})
-                    for attr in obj.get_attributes_by_relation(object_relation):
-                        index[bucket_key][self._value_norm_key(str(attr.value))] = obj
-            elif obj.name == "url":
-                bucket_key = self._object_attribute_index_key("url", "url")
+            relations = indexed_relations_by_object.get(obj.name)
+            if not relations:
+                continue
+
+            for object_relation in relations:
+                bucket_key = self._object_attribute_index_key(obj.name, object_relation)
                 index.setdefault(bucket_key, {})
-                for attr in obj.get_attributes_by_relation("url"):
+                for attr in obj.get_attributes_by_relation(object_relation):
                     index[bucket_key][self._value_norm_key(str(attr.value))] = obj
-            elif obj.name == "registry-key":
-                bucket_key = self._object_attribute_index_key("registry-key", "key")
-                index.setdefault(bucket_key, {})
-                for attr in obj.get_attributes_by_relation("key"):
-                    index[bucket_key][self._value_norm_key(str(attr.value))] = obj
-            elif obj.name == "malware":
-                bucket_key = self._object_attribute_index_key("malware", "name")
-                index.setdefault(bucket_key, {})
-                # Keep alias as a compatibility source for matching historical malware objects.
-                for object_relation in ("name", "alias"):
-                    for attr in obj.get_attributes_by_relation(object_relation):
-                        index[bucket_key][self._value_norm_key(str(attr.value))] = obj
-            elif obj.name in {"av-signature", "sb-signature"}:
-                bucket_key = self._object_attribute_index_key(obj.name, "signature")
-                index.setdefault(bucket_key, {})
-                for attr in obj.get_attributes_by_relation("signature"):
-                    index[bucket_key][self._value_norm_key(str(attr.value))] = obj
-            elif obj.name == "file":
-                sha_bucket_key = self._object_attribute_index_key("file", "sha256")
-                filename_bucket_key = self._object_attribute_index_key("file", "filename")
-                index.setdefault(sha_bucket_key, {})
-                index.setdefault(filename_bucket_key, {})
-                for attr in obj.get_attributes_by_relation("sha256"):
-                    index[sha_bucket_key][self._value_norm_key(str(attr.value))] = obj
-                for attr in obj.get_attributes_by_relation("filename"):
-                    index[filename_bucket_key][self._value_norm_key(str(attr.value))] = obj
 
         return index
 
