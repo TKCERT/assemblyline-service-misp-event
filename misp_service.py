@@ -65,6 +65,76 @@ TAG_PROCESSING_MAPPINGS: List[Dict[str, str | Dict | List]] = [
         },
     },
     {
+        "al_tag_patterns": ["cert.issuer"],
+        "misp_object_name": "x509",
+        "misp_attributes": {
+            "issuer": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["cert.serial_no"],
+        "misp_object_name": "x509",
+        "misp_attributes": {
+            "serial-number": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["dynamic.process.command_line"],
+        "misp_object_name": "process",
+        "misp_attributes": {
+            "command-line": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["dynamic.process.file_name", "dynamic.process.module_name"],
+        "misp_object_name": "process",
+        "misp_attributes": {
+            "name": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["dynamic.process.file_path", "dynamic.process.module_path"],
+        "misp_object_name": "process",
+        "misp_attributes": {
+            "image": {"type": "filename", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["dynamic.mutex"],
+        "misp_object_name": "mutex",
+        "misp_attributes": {
+            "name": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["network.port"],
+        "misp_object_name": "ip-port",
+        "misp_attributes": {
+            "dst-port": {"type": "port", "ids": True, "correlate": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["network.protocol"],
+        "misp_object_name": "ip-port",
+        "misp_attributes": {
+            "protocol": {"type": "text"},
+        },
+    },
+    {
+        "al_tag_patterns": ["file.apk.pkg_name"],
+        "misp_object_name": "android-app",
+        "misp_attributes": {
+            "appid": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
+        "al_tag_patterns": ["file.apk.app.label"],
+        "misp_object_name": "android-app",
+        "misp_attributes": {
+            "name": {"type": "text", "correlate": True, "tag": True},
+        },
+    },
+    {
         "al_tag_patterns": ["dynamic.registry_key", "dynamic.window.regkeys"],
         "misp_object_name": "registry-key",
         "misp_attributes": {
