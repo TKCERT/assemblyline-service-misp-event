@@ -256,6 +256,12 @@ class MISPService(ServiceBase):
         self.workflow_review_tag = self.config.get(self.WORKFLOW_REVIEW_TAG_CONFIG_KEY, DEFAULT_WORKFLOW_REVIEW_TAG)
         self.verify = self.config.get("verify_certificate", True)
 
+        if self.misp_service_url:
+            self.misp_service_url = self.misp_service_url.rstrip("/")
+
+        if self.misp_service_api_url:
+            self.misp_service_api_url = self.misp_service_api_url.rstrip("/")
+
         if not self.misp_service_api_url:
             raise RuntimeError("MISP service API URL not set in the config. Check the config section in the manifest?")
 
@@ -1163,9 +1169,8 @@ class MISPService(ServiceBase):
 
         event_uuid = sync_summary.get("Event UUID", "n/a")
         if event_uuid != "n/a":
-            base_url = (self.misp_service_url or self.misp_service_api_url).rstrip("/")
             permalink_section = URLSectionBody()
-            permalink_section.add_url(f"{base_url}/events/view/{event_uuid}")
+            permalink_section.add_url(f"{self.misp_service_url or self.misp_service_api_url}/events/view/{event_uuid}")
             misp_sync_section.add_section_part(permalink_section)
             if self._is_root_file_from_ancestry(request.sha256, temp_submission_data):
                 misp_sync_section.set_heuristic(1)
