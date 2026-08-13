@@ -305,6 +305,38 @@ class MISPService(ServiceBase):
             DEFAULT_ANCESTRY_RELATIONSHIP_TYPE,
         )
 
+    def _is_root_file_from_ancestry(self, file_sha256: Optional[str], temp_submission_data: Dict[str, Any]) -> bool:
+        if not file_sha256:
+            return False
+
+        normalized_sha256 = str(file_sha256).strip().lower()
+        if not normalized_sha256:
+            return False
+
+        ancestry = temp_submission_data.get("ancestry", []) or []
+        for chain in ancestry:
+            if not isinstance(chain, list):
+                continue
+
+            for index, node in enumerate(chain):
+                if not isinstance(node, dict):
+                    continue
+
+                node_sha256 = str(node.get("sha256") or "").strip().lower()
+                if node_sha256 != normalized_sha256:
+                    continue
+
+                parent_relation = str(node.get("parent_relation") or "").strip().upper()
+                if parent_relation == "ROOT":
+                    return True
+
+                # Fallback for ancestry formats where the root node is the first item
+                # without an explicit ROOT marker.
+                if index == 0 and not parent_relation:
+                    return True
+
+        return False
+
     def _normalize_events(self, raw_events: Any) -> Iterable[MISPEvent]:
         if isinstance(raw_events, MISPEvent):
             return [raw_events]
@@ -1129,11 +1161,14 @@ class MISPService(ServiceBase):
             }
             misp_sync_section.add_section_part(KVSectionBody(**stats_kv))
 
-        base_url = (self.misp_service_url or self.misp_service_api_url or "").rstrip("/")
-        if base_url and sync_summary.get("Event UUID") and sync_summary.get("Event UUID") != "n/a":
+        event_uuid = sync_summary.get("Event UUID", "n/a")
+        if event_uuid != "n/a":
+            base_url = (self.misp_service_url or self.misp_service_api_url).rstrip("/")
             permalink_section = URLSectionBody()
-            permalink_section.add_url(f"{base_url}/events/view/{sync_summary['Event UUID']}")
+            permalink_section.add_url(f"{base_url}/events/view/{event_uuid}")
             misp_sync_section.add_section_part(permalink_section)
+            if self._is_root_file_from_ancestry(request.sha256, temp_submission_data):
+                misp_sync_section.set_heuristic(1)
 
         result.add_section(misp_sync_section, on_top=True)
 

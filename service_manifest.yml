@@ -66,6 +66,12 @@ config:
 #     heur_id: 1
 #     name: Demo
 #     score: 100
+heuristics:
+  - heur_id: 1
+    name: MISP event available
+    score: 0
+    filetype: "*"
+    description: MISP event was created or updated and a permalink is available.
 
 # Docker configuration block which defines:
 #  - the name of the docker container that will be created
