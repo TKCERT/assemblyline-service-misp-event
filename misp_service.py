@@ -7,7 +7,14 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import baseconv
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.request import ServiceRequest
-from assemblyline_v4_service.common.result import BODY_FORMAT, Result, ResultSection, ResultURLSection
+from assemblyline_v4_service.common.result import (
+    BODY_FORMAT,
+    KVSectionBody,
+    Result,
+    ResultMultiSection,
+    ResultSection,
+    URLSectionBody,
+)
 
 from pymisp import ExpandedPyMISP, MISPEvent, MISPObject
 
@@ -1084,12 +1091,12 @@ class MISPService(ServiceBase):
 
 
         sync_summary: Dict[str, Any] = {
-            "operation": None,
-            "submission_id": request.sid,
-            "event_id": None,
-            "event_uuid": None,
-            "stats": {},
-            "status": "error",
+            "Operation": "n/a",
+            "Submission ID": request.sid or "n/a",
+            "Status": "error",
+            "Event ID": "n/a",
+            "Event UUID": "n/a",
+            "Stats": {},
         }
 
         try:
@@ -1099,31 +1106,35 @@ class MISPService(ServiceBase):
 
             sync_summary.update(
                 {
-                    "operation": operation,
-                    "event_id": getattr(saved_event, "id", None),
-                    "event_uuid": getattr(saved_event, "uuid", None),
-                    "stats": stats,
-                    "status": "ok",
+                    "Operation": operation,
+                    "Event ID": getattr(saved_event, "id", None) or "n/a",
+                    "Event UUID": getattr(saved_event, "uuid", None) or "n/a",
+                    "Stats": stats,
+                    "Status": "ok",
                 }
             )
         except Exception as err:
             self.log.exception("MISP event synchronization failed")
-            sync_summary["error"] = str(err)
+            sync_summary["Error"] = str(err)
 
-        misp_sync_section = ResultSection(
-            "MISP event synchronization",
-            body_format=BODY_FORMAT.MEMORY_DUMP,
-            body=self._json_dump(sync_summary),
-        )
+        misp_sync_section = ResultMultiSection("MISP Event")
+
+        stats_summary = sync_summary.pop("Stats", {})
+        misp_sync_section.add_section_part(KVSectionBody(**sync_summary))
+
+        if isinstance(stats_summary, dict) and stats_summary:
+            stats_kv = {
+                str(key).replace("_", " ").title(): value
+                for key, value in stats_summary.items()
+            }
+            misp_sync_section.add_section_part(KVSectionBody(**stats_kv))
+
+        base_url = (self.misp_service_url or self.misp_service_api_url or "").rstrip("/")
+        if base_url and sync_summary.get("Event UUID") and sync_summary.get("Event UUID") != "n/a":
+            permalink_section = URLSectionBody()
+            permalink_section.add_url(f"{base_url}/events/view/{sync_summary['Event UUID']}")
+            misp_sync_section.add_section_part(permalink_section)
+
         result.add_section(misp_sync_section, on_top=True)
-
-        base_url = self.misp_service_url or self.misp_service_api_url
-        if base_url and sync_summary.get("event_id") and sync_summary.get("event_uuid"):
-            misp_url_section = ResultURLSection('MISP Event')
-            misp_url_section.add_url(
-                f"{base_url}/events/view/{sync_summary['event_id']}",
-                f"View event {sync_summary['event_id']} ({sync_summary['event_uuid']}) in MISP",
-            )
-            result.add_section(misp_url_section, on_top=True)
 
         request.result = result
