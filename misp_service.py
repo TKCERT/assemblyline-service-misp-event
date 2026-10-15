@@ -13,6 +13,7 @@ from assemblyline_v4_service.common.result import (
     Result,
     ResultMultiSection,
     ResultSection,
+    ResultURLSection,
     URLSectionBody,
 )
 
@@ -1176,5 +1177,9 @@ class MISPService(ServiceBase):
                 misp_sync_section.set_heuristic(1)
 
         result.add_section(misp_sync_section, on_top=True)
+
+        # TEST for https://github.com/CybercentreCanada/assemblyline/issues/461
+        result.add_section(ResultURLSection("MISP Event URL",
+            url=f"{self.misp_service_url or self.misp_service_api_url}/events/view/{event_uuid}"))
 
         request.result = result
