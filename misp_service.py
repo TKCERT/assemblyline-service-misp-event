@@ -1179,7 +1179,8 @@ class MISPService(ServiceBase):
         result.add_section(misp_sync_section, on_top=True)
 
         # TEST for https://github.com/CybercentreCanada/assemblyline/issues/461
-        result.add_section(ResultURLSection("MISP Event URL",
-            url=f"{self.misp_service_url or self.misp_service_api_url}/events/view/{event_uuid}"))
+        url_section = ResultURLSection("MISP Event URL")
+        url_section.add_url(f"{self.misp_service_url or self.misp_service_api_url}/events/view/{event_uuid}")
+        result.add_section(url_section)
 
         request.result = result
