@@ -1096,6 +1096,9 @@ class MISPService(ServiceBase):
 
         result = Result()
 
+        debug_section = ResultSection('Debug Information', auto_collapse=True)
+        result.add_section(debug_section)
+
         # ==================================================================
         # Tags generated from other services
         #
@@ -1104,7 +1107,7 @@ class MISPService(ServiceBase):
         tags = request.task.tags or {}
         tag_section = ResultSection('Tags generated from other services', body_format=BODY_FORMAT.MEMORY_DUMP,
                         body=self._json_dump(tags), auto_collapse=True)
-        result.add_section(tag_section)
+        debug_section.add_subsection(tag_section)
 
         # ==================================================================
         # Metadata provided during submission
@@ -1114,7 +1117,7 @@ class MISPService(ServiceBase):
         metadata = request.task.metadata or {}
         meta_section = ResultSection('Metadata provided during submission', body_format=BODY_FORMAT.MEMORY_DUMP,
                          body=self._json_dump(metadata), auto_collapse=True)
-        result.add_section(meta_section)
+        debug_section.add_subsection(meta_section)
 
         # ==================================================================
         # Temporary submission data provided:
@@ -1126,7 +1129,7 @@ class MISPService(ServiceBase):
         temp_submission_data = request.temp_submission_data or {}
         temp_section = ResultSection('Temporary submission data', body_format=BODY_FORMAT.MEMORY_DUMP,
                                      body=self._json_dump(temp_submission_data), auto_collapse=True)
-        result.add_section(temp_section)
+        debug_section.add_subsection(temp_section)
 
 
         sync_summary: Dict[str, Any] = {
